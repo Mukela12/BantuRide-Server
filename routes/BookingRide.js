@@ -1,11 +1,14 @@
 import express from "express";
-import { PassagerBookingRequest, GetDriverRequests } from "../controllers/BookingController";
+import { PassagerBookingRequest, GetRideRequests, DriverConfirmation, BookingUpdate, CancelBooking } from "../controllers/BookRideController.js";
 
 const router = express.Router();
 
 // Route to book a ride
 router.post("/BookRequest", PassagerBookingRequest);
+router.post("/Confirm", DriverConfirmation);
+router.get("/GetRideRequest", GetRideRequests);
+router.get("/RideUpdate", BookingUpdate);
+router.post("/cancelride", CancelBooking);
 
-router.get("/GetRideRequest", GetDriverRequests);
 
 export default router;

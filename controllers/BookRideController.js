@@ -1,4 +1,4 @@
-import Booking from "../models/BookRideModel";
+import Booking from "../models/BookRideModel.js";
 import { userModel } from "../models/UserModel.js";
 
 
@@ -8,9 +8,13 @@ const PassagerBookingRequest = async (req, res) => {
 
     // Check if user, pick-up, and drop-off locations are provided
     if (!user || !pickUpLocation || !dropOffLocation) {
+      console.log(req.body);
       return res.status(400).json({
         success: false,
         message: "User, pick-up, and drop-off locations are required.",
+        user: user,
+        pickUpLocation: pickUpLocation,
+        dropOffLocation: dropOffLocation,
       });
     }
 
