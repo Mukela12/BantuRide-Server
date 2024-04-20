@@ -31,3 +31,14 @@ The BantuRide Server is the backend infrastructure that powers the core function
 - **Mongoose**: ODM (Object Data Modeling) library for MongoDB and Node.js.
 
 - **Socket.io**: Real-time communication library for enabling bidirectional communication between clients and the server.
+
+
+## Version 1 
+
+** Simple Authentication **
+1. register controller
+2. VerifyOTP
+3. LoginController
+   
+![Authentication](https://github.com/Mukela12/BantuRide-Server/assets/65640620/83a52e61-9b87-4844-9319-c355c1a4c114)
+
