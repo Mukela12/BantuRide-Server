@@ -3,11 +3,16 @@ import otplib from "otplib";
 import nodemailer from "nodemailer";
 import { hashPassword, comparePassword } from "../helpers/authHelper.js";
 import { userModel } from "../models/UserModel.js";
+import dotenv from "dotenv";
+dotenv.config();
+
 
 const transporter = nodemailer.createTransport({
-    service: "gmail",
+    host: 'smtp.gmail.com',
+    port: 587,
+    secure: false, 
     auth: {
-        user: process.env.USER,
+        user: process.env.EMAIL,
         pass: process.env.PASS,
     },
 });
@@ -20,13 +25,8 @@ const registerController = async (req, res) => {
     try {
         const { firstname, lastname, email, password } = req.body;
 
-        // Generate a random counter value (you may need to store and increment this for each user)
         const counter = Math.floor(100000 + Math.random() * 900000);
-
-        // Generate HOTP
         const otp = generateHOTP(process.env.SECRET, counter);
-
-        // Check if user already exists
         const existingUser = await userModel.findOne({ email });
 
         if (existingUser) {
@@ -36,42 +36,35 @@ const registerController = async (req, res) => {
             });
         }
 
-        // Validation
-        if (!firstname || !lastname) {
+        if (!firstname || !lastname || !email) {
             return res.status(400).send({
                 success: false,
-                message: 'Name is required',
+                message: 'All fields (firstname, lastname, email) are required',
             });
         }
-        if (!email) {
-            return res.status(400).send({
-                success: false,
-                message: 'Email is required',
-            });
-        }
+
         if (!password || password.length < 6) {
             return res.status(400).send({
                 success: false,
-                message: 'Password is required and should be 6 characters long',
+                message: 'Password is required and should be at least 6 characters long',
             });
         }
 
-        // Hashed password
         const hashedPassword = await hashPassword(password);
 
-        // Save user
-        const user = await userModel({
+        const user = new userModel({
             firstname,
             lastname,
             email,
             password: hashedPassword,
-            otp, // Save OTP to the user model
-        }).save();
+            otp
+        });
 
-        // Sending verification email
-        console.log('Sending verification email to:', email);
+        await user.save();
+
+
         await transporter.sendMail({
-            from: 'breakoutmediaagency@gmail.com',
+            from: process.env.EMAIL,
             to: email,
             subject: 'Account Verification',
             text: `Your OTP for account verification is: ${otp}`,
@@ -79,7 +72,6 @@ const registerController = async (req, res) => {
 
         console.log('Verification email sent successfully.');
 
-        // Send success response
         return res.status(201).json({
             success: true,
             message: 'Registration successful. Please check your email for verification.',
@@ -87,13 +79,6 @@ const registerController = async (req, res) => {
         });
     } catch (error) {
         console.error('Error in Register API:', error);
-
-        // Handle specific errors
-        if (error.code === 'ERR_HTTP_HEADERS_SENT') {
-            return; // Avoid sending headers multiple times
-        }
-
-        // Send error response
         return res.status(500).json({
             success: false,
             message: 'Error in Register API',
@@ -104,15 +89,15 @@ const registerController = async (req, res) => {
 
 const verifyOTP = async (req, res) => {
     const { email, enteredOTP } = req.body;
-
     try {
         const user = await userModel.findOne({ email });
 
-        if (!user)
+        if (!user) {
             return res.json({
                 success: false,
                 message: `User not found with the given email: ${email}`,
             });
+        }
 
         if (user.otp !== enteredOTP) {
             return res.json({
@@ -121,81 +106,62 @@ const verifyOTP = async (req, res) => {
             });
         }
 
-        // Clear the OTP from the database after successful verification
         await userModel.findByIdAndUpdate(user._id, { otp: null });
-
         res.json({ success: true, message: 'OTP verified successfully!' });
     } catch (error) {
         console.error('Error during OTP verification:', error);
-        console.error('Axios response:', error.response); // Add this line
         res.json({ success: false, message: 'Error during OTP verification' });
     }
 };
 
 const loginController = async (req, res) => {
+    const { email, password } = req.body;
+
     try {
-        const { email, password } = req.body;
-
-        // validation
-        if (!email || !password) {
-            return res.status(500).send({
-                success: false,
-                message: "Please Provide Email Or Password",
-            });
-        }
-
-        // find user
         const user = await userModel.findOne({ email });
 
         if (!user) {
-            return res.status(500).send({
+            return res.status(404).send({
                 success: false,
                 message: "User Not Found",
             });
         }
 
-        // match password
         const match = await comparePassword(password, user.password);
 
         if (!match) {
-            return res.status(500).send({
+            return res.status(401).send({
                 success: false,
                 message: "Invalid email or password",
             });
         }
 
-        // TOKEN JWT
-        const token = await jwt.sign({ _id: user._id }, process.env.JWT_SECRET, {
-            expiresIn: "7d",
-        });
+        
+        const token = jwt.sign({ _id: user._id }, process.env.JWT_SECRET, { expiresIn: "7d" });
+        user.password = undefined; // Exclude password from output
 
-        // undefined password
-        user.password = undefined;
-
-        res.status(200).send({
+        return res.status(200).json({
             success: true,
             message: "Login successful",
             token,
             user,
         });
     } catch (error) {
-        console.log(error);
+        console.error('Error in login API:', error);
         return res.status(500).send({
             success: false,
             message: "Error in login API",
             error,
         });
     }
-}
+};
 
 const updateUserController = async (req, res) => {
-    try {
-        const { firstname, lastname, password, email } = req.body;
+    const { firstname, lastname, password, email } = req.body;
 
-        // user find
+    try {
         const user = await userModel.findOne({ email });
 
-        // password validate
         if (password && password.length < 6) {
             return res.status(400).send({
                 success: false,
@@ -204,8 +170,6 @@ const updateUserController = async (req, res) => {
         }
 
         const hashedPassword = password ? await hashPassword(password) : undefined;
-
-        // updated user
         const updatedUser = await userModel.findOneAndUpdate(
             { email },
             {
@@ -216,22 +180,21 @@ const updateUserController = async (req, res) => {
             { new: true }
         );
 
-        updatedUser.password = undefined;
-
+        updatedUser.password = undefined; // Exclude password from output
         res.status(200).send({
             success: true,
             message: "Profile Updated. Please Login",
             updatedUser,
         });
     } catch (error) {
-        console.log(error);
+        console.error('Error In User Update API:', error);
         res.status(500).send({
             success: false,
             message: "Error In User Update API",
             error,
         });
     }
-}
+};
 
 export {
     registerController,

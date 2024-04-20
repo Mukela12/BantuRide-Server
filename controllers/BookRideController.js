@@ -47,9 +47,8 @@ const PassagerBookingRequest = async (req, res) => {
 };
 
 
-// This Module will Get all booking requests
 const GetRideRequests = async (req, res) => {
-  const { Driver, isFirstRequest } = req.body;
+  const { Driver } = req.body;
 
   try {
     if (!Driver) {
@@ -59,55 +58,48 @@ const GetRideRequests = async (req, res) => {
       });
     }
 
-    if (isFirstRequest) {
-      // If it's the first request, fetch all current 'pending' requests
-      const driverInfo = await userModel.findById(Driver);
-
-      if (!driverInfo || !driverInfo.location) {
-        return res.status(500).json({
-          success: false,
-          message: "Driver location not available.",
-        });
-      }
-
-      // Find nearby 'pending' ride requests within a 20-mile radius
-      const allPendingRequests = await Booking.find({
-        status: 'pending',
-        pickUpLocation: {
-          $geoWithin: {
-            $centerSphere: [driverInfo.location.coordinates, 20 / 3963.2], // 20 miles in radians
-          },
-        },
-      }).sort({ date: -1 });
-
-      return res.status(200).json({
-        success: true,
-        message: "All current 'pending' ride requests fetched within a 20-mile radius.",
-        requests: allPendingRequests,
+    // Check driver availability before proceeding
+    const driverInfo = await userModel.findById(Driver);
+    if (!driverInfo || driverInfo.driverStatus !== "available") {
+      return res.status(400).json({
+        success: false,
+        message: "Driver is currently unavailable for requests.",
       });
     }
 
-    // Create a Change Stream on the Booking collection
-    const bookingChangeStream = Booking.watch();
+    // Find nearby pending requests (consider adding an index on `status` and `pickUpLocation`)
+    const now = new Date();
+    const oneMinuteAgo = new Date(now.getTime() - 60000); // Adjust as needed
+    const nearbyRequests = await Booking.find({
+      status: "pending",
+      pickUpLocation: {
+        $geoWithin: {
+          $centerSphere: [driverInfo.location.coordinates, 20 / 3963.2], // 20 miles
+        },
+      },
+      createdAt: { $gte: oneMinuteAgo }, // Filter for recent requests
+    })
+      .sort({ date: -1 }); // Sort by newest first
 
-    // Listen for insert operations to get notified when a new 'pending' request is added
-    bookingChangeStream.on('change', async (change) => {
-      if (change.operationType === 'insert' && change.fullDocument.status === 'pending') {
-        // Fetch the newly added 'pending' request and send it in the response
-        const newPendingRequest = await Booking.findOne({ _id: change.documentKey._id, status: 'pending' });
-        return res.status(200).json({
-          success: true,
-          message: "New ride request added.",
-          request: newPendingRequest,
-        });
-      }
-    });
-
+    if (nearbyRequests.length > 0) {
+      // Send available requests
+      return res.status(200).json({
+        success: true,
+        message: "Available ride requests found!",
+        requests: nearbyRequests,
+      });
+    } else {
+      // Inform driver about no requests
+      return res.status(200).json({
+        success: true,
+        message: "No available ride requests found at this time.",
+      });
+    }
   } catch (error) {
     console.error("Error in getting ride requests:", error);
     return res.status(500).json({
       success: false,
-      message: 'Error during getting ride requests.',
+      message: "Error during getting ride requests.",
       error: error.message || error,
     });
   }
